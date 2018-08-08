@@ -145,7 +145,7 @@ function assertSrcContents() {
                 return;
             }
 
-            if(header.value !== licenseStr) {
+            if(header.value.replace(/\r\n/g, '\n') !== licenseStr) {
                 logs.push(file + ' : has incorrect header information.');
             }
         });
