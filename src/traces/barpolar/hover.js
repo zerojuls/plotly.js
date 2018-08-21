@@ -10,7 +10,7 @@
 
 var barHover = require('../bar/hover');
 var makeHoverPointText = require('../scatterpolar/hover').makeHoverPointText;
-var Axes = require('../../plots/cartesian/axes');
+var Color = require('../../components/color')
 var Fx = require('../../components/fx');
 var Lib = require('../../lib');
 
@@ -25,40 +25,65 @@ module.exports = function hoverPoints(pointData, xval, yval, hovermode) {
     var xa = subplot.xaxis;
     var ya = subplot.yaxis;
 
-    var rVal = Math.sqrt(xval * xval + yval * yval);
+    var rVal = radialAxis.c2g(Math.sqrt(xval * xval + yval * yval));
     var thetaVal = Math.atan2(yval, xval);
 
-    var distFn = function(di) {
-        var rg = radialAxis.c2g(di.s);
-        var thetag = angularAxis.c2g(Lib.deg2rad(Lib.wrap180(Lib.rad2deg(di.theta))));
-        // console.log(di.p, rg, rVal)
+    console.log('')
 
-        return Fx.inbox(rg - rVal, rVal - rg, 1)
+    // TODO add padding around sector to show labels,
+    // when hovering "close to" them
+    var distFn = function(di) {
+        var sector = [di.p0, di.p1].map(angularAxis.c2g).map(Lib.rad2deg);
+        console.log(di.i, Lib.rad2deg(thetaVal), sector)
+        if(!isAngleInSector(thetaVal, sector)) return Infinity;
+        return rVal >= radialAxis.c2g(di.s0) && rVal <= radialAxis.c2g(di.s1) ? 1 : Infinity;
     };
 
     Fx.getClosest(cd, distFn, pointData);
-
-    // console.log(pointData.index)
 
     // skip the rest (for this trace) if we didn't find a close point
     if(pointData.index === false) return;
 
     var index = pointData.index;
     var cdi = cd[index];
-
-    var rg = radialAxis.c2g(cdi.s);
+    var rg = radialAxis.c2g(cdi.s1);
+    // TODO include offset here?
     var thetag = angularAxis.c2g(cdi.p);
     var xp = xa.c2p(rg * Math.cos(thetag));
     var yp = ya.c2p(rg * Math.sin(thetag));
 
+    // TODO use 'extents' like in Bar.hover?
     pointData.x0 = pointData.x1 = xp;
     pointData.y0 = pointData.y1 = yp;
 
-    console.log(xp, yp)
-
+    var _cdi = Lib.extendFlat({}, cdi, {r: cdi.s, theta: cdi.p});
+    pointData.extraText = makeHoverPointText(_cdi, trace, subplot);
     pointData.xLabelVal = undefined;
     pointData.yLabelVal = undefined;
-    pointData.extraText = makeHoverPointText(cdi, trace, subplot);
+
+    // TODO DRY-up with Bar.hover
+    var mc = cdi.mcc || trace.marker.color;
+    var mlc = cdi.mlcc || trace.marker.line.color;
+    var mlw = cdi.mlw || trace.marker.line.width;
+    if(Color.opacity(mc)) pointData.color = mc;
+    else if(Color.opacity(mlc) && mlw) pointData.color = mlc;
 
     return [pointData];
 };
+
+// TODO move to lib/angles
+//
+// !!! DOES NOT WORK !!!
+function isAngleInSector(rad, sector) {
+    if(Lib.isFullCircle(sector)) return true;
+
+    var s0 = Lib.wrap360(sector[0]);
+    var s1 = Lib.wrap360(sector[1]);
+    if(s0 > s1) s1 += 360;
+
+    var deg = Lib.wrap360(Lib.rad2deg(rad));
+    var nextTurnDeg = deg + 360;
+
+    return (deg >= s0 && deg <= s1) ||
+        (nextTurnDeg >= s0 && nextTurnDeg <= s1);
+}
